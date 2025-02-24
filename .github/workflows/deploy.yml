@@ -35,12 +35,131 @@ jobs:
         run: |
           echo "NUXT_PUBLIC_SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
           echo "NUXT_PUBLIC_SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> .env
+          # Display env file (without sensitive values)
+          echo "Environment file created with the following variables:"
+          echo "NUXT_PUBLIC_SUPABASE_URL=<hidden>"
+          echo "NUXT_PUBLIC_SUPABASE_KEY=<hidden>"
+
+      - name: Update nuxt.config.ts for GitHub Pages 🔧
+        run: |
+          # Create a temporary file with the updated content
+          cat > nuxt.config.ts.new << 'EOL'
+          // https://nuxt.com/docs/api/configuration/nuxt-config
+          export default defineNuxtConfig({
+            devtools: { enabled: true },
+            modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
+            css: ['~/assets/css/main.css'],
+            app: {
+              baseURL: '/',
+              buildAssetsDir: '/_nuxt/',
+              head: {
+                title: 'Blur Vault - Privacy-Focused Image Processing',
+                meta: [
+                  { charset: 'utf-8' },
+                  { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+                  { hid: 'description', name: 'description', content: 'Blur Vault is a privacy-focused image processing application that allows users to blur faces in images.' }
+                ],
+                link: [
+                  { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }
+                ]
+              }
+            },
+            supabase: {
+              url: process.env.NUXT_PUBLIC_SUPABASE_URL,
+              key: process.env.NUXT_PUBLIC_SUPABASE_KEY,
+              redirectOptions: {
+                login: '/login',
+                callback: '/confirm',
+                exclude: ['/*']
+              }
+            },
+            nitro: {
+              preset: 'github-pages',
+              prerender: {
+                crawlLinks: false,
+                routes: ['/200.html', '/404.html']
+              }
+            }
+          })
+          EOL
+
+          # Replace the original file with the new one
+          mv nuxt.config.ts.new nuxt.config.ts
+
+          # Display the updated file
+          echo "Updated nuxt.config.ts:"
+          cat nuxt.config.ts
 
       - name: Build 🏗️
         run: |
-          npm run build
+          # Set environment variables for the build
+          export NUXT_PUBLIC_SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
+          export NUXT_PUBLIC_SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}"
+
+          # Run the build
+          npm run generate
+
           # Create a .nojekyll file to prevent GitHub Pages from ignoring files that begin with an underscore
           touch .output/public/.nojekyll
+
+          # Create a 404.html file that redirects to the SPA
+          cat > .output/public/404.html << 'EOL'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Blur Vault</title>
+              <script>
+                // Single Page Apps for GitHub Pages
+                // MIT License
+                // https://github.com/rafgraph/spa-github-pages
+                var pathSegmentsToKeep = 0;
+                var l = window.location;
+                l.replace(
+                  l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                  l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+                  l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+                  (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+                  l.hash
+                );
+              </script>
+            </head>
+            <body>
+              Redirecting...
+            </body>
+          </html>
+          EOL
+
+          # Create a script to handle SPA routing
+          cat > .output/public/index.html << 'EOL'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Blur Vault</title>
+              <script>
+                // Single Page Apps for GitHub Pages
+                // MIT License
+                // https://github.com/rafgraph/spa-github-pages
+                (function(l) {
+                  if (l.search[1] === '/' ) {
+                    var decoded = l.search.slice(1).split('&').map(function(s) { 
+                      return s.replace(/~and~/g, '&')
+                    }).join('?');
+                    window.history.replaceState(null, null,
+                      l.pathname.slice(0, -1) + decoded + l.hash
+                    );
+                  }
+                }(window.location))
+              </script>
+              <!-- Redirect to the actual app -->
+              <meta http-equiv="refresh" content="0;URL='/_nuxt/index.html'" />
+            </head>
+            <body>
+              Loading...
+            </body>
+          </html>
+          EOL
 
       - name: Deploy to GitHub Pages 🚀
         uses: JamesIves/github-pages-deploy-action@v4
